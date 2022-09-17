@@ -5,15 +5,14 @@ library(ggplot2)
 library(xtable)
 library(dplyr)
 library(here)
+
+# import functions
 source(here("simulation_functions.R"))
 
 # players' ID
 n = 5 # number of players and total spaces
 r = 2 # number of residents and their spaces
 v = n-r # number of visitors and their spaces
-n_seq = 1:n
-r_seq = 1:r
-v_seq = (n-r):n
 t = c(0,1) # 0 is t- contract and 1 is t+ contract
 sim = 1000
 
@@ -41,6 +40,7 @@ pref_space = create_space_pref(r, n, contract)
 # get simulation result
 #allocation = algo_da(pref_player, pref_space, n)
 allocation = algo_be(pref_player, pref_space, n, r)
+#allocation = algo_co(pref_player, pref_space, n, r)
 #print(allocation)
 
 # calculate the efficiency of the current simulation
@@ -65,4 +65,173 @@ print(paste('efficiency =', mean(allo[,5])))
 rm(allo, allocation, accept_cont, player_id)
 
 
-##### Testing #####
+##### Testing Cumulative Offer #####
+# contract list
+contract = c() # three columns: player id, space id, term
+# loop over players
+for (i in 1:n){
+  # loop over spaces
+  for (j in 1:n){
+    # loop over terms
+    for (k in 1:length(t)){
+      contract = rbind(contract, c(i,j,t[k]))
+    }
+  }
+}
+
+# players' preference lists
+pref_player = create_player_pref(n, contract)
+
+# space's priority lists
+pref_space = create_space_pref(r, n, contract)
+
+# get the initial empty accumulate set for each space
+space_acum = pref_space
+player_acum = pref_player
+
+for (i in 1:n){
+  # add a 4th column to store whether the contract is in the accumulate set
+  space_acum[[i]] = cbind(space_acum[[i]], rep(0, nrow(space_acum[[i]])))
+  # add a 5th column to store whether the claim contract is attached
+  space_acum[[i]] = cbind(space_acum[[i]], rep(0, nrow(space_acum[[i]])))
+}
+
+# get the initial empty choice set for each space
+space_choi = matrix(0, nrow = n, ncol = 5)
+
+# loop for Benchmark mechanism
+for (i in 1:10000){
+  
+  # collect the players without contract
+  reject_player = c()
+  for (j in 1:n){
+    if (j %in% space_choi[,1]){next}
+    else{reject_player = c(reject_player, j)}
+  }
+  
+  # break out of the loop if there is no rejected player
+  if (length(reject_player)==0){break}
+  
+  # randomly select a rejected player to propose the choice
+  p = sample(reject_player, 1)
+  # get that player's most preferred contract and remove it from the preference
+  contract = player_acum[[p]][1,]
+  player_acum[[p]] = player_acum[[p]][-1,]
+  # locate the corresponding space and add the contract to space' accumulate set
+  s = contract[2]
+  for (k in 1:nrow(space_acum[[s]])){
+    if (identical(contract, space_acum[[s]][k,1:3]) & space_acum[[s]][k,5]==0){
+      space_acum[[s]][k,4] = 1
+      break
+    }
+  }
+  
+  # for the space selected update the corresponding choice set
+  accept_contract = space_acum[[s]][space_acum[[s]][,4]==1,]
+  if (is.null(nrow(accept_contract))){
+    space_choi[s,] = accept_contract
+  }
+  else if (nrow(accept_contract)>1){
+    accept_contract = accept_contract[1,]
+    space_choi[s,] = accept_contract
+  }
+  else{
+    space_choi[s,] = c(0,0,0,0,0)
+    next}
+  
+  # if the player is resident lock the resident's space
+  if (p<=r & accept_contract[1]==p & accept_contract[2]!=p & accept_contract[3]==0){
+    # send back a claim contract to block the t+ term of the resident's space
+    for (k in 1:nrow(space_acum[[p]])){
+      if (space_acum[[p]][k,1]!=p & space_acum[[p]][k,3]==1)
+        # mark the claim contract status = 1
+      {space_acum[[p]][k,5]=1}
+    }
+    # the resident's space rerun its choice function
+    rerun_contract = space_acum[[p]][space_acum[[p]][,4]==1 & space_acum[[p]][,5]==0,]
+    if (is.null(nrow(rerun_contract))){
+      space_choi[p,] = rerun_contract
+    }
+    else if (nrow(rerun_contract)>1){
+      rerun_contract = rerun_contract[1,]
+      space_choi[p,] = rerun_contract
+    }
+    else{
+      space_choi[p,] = c(0,0,0,0,0)
+    }
+  }
+  
+  # anyone who hold two contracts keeps the preferred one
+  # loop over players in space choices to find the player with two choices
+  for (k in 1:n){
+    player_hold = space_choi[space_choi[,1]==k,]
+    nrow = ifelse(is.null(nrow(player_hold)), 1, nrow(player_hold))
+    # if one player has two accepted contracts (at most two)
+    if (nrow>2){print(paste('i=',i, 'nrow=',nrow))}
+    if (nrow>=2){
+      # extract the two contracts
+      contract1 = player_hold[1,]
+      contract2 = player_hold[2,]
+      # loop over players preference to compare the two contracts
+      for (m in 1:nrow(pref_player[[k]])){
+        # if player prefers contract1
+        if (identical(contract1[1:3], pref_player[[k]][m,])){
+          # rerun contract2's space choice and choose the second best
+          sp = contract2[2]
+          second_contract = space_acum[[sp]][space_acum[[sp]][,4]==1 & space_acum[[sp]][,5]==0,]
+          if (is.null(nrow(second_contract))){
+            space_choi[sp,] = c(0,0,0,0,0)
+          }
+          else if (nrow(second_contract)>1){
+            space_choi[sp,] = c(0,0,0,0,0)
+          }
+          else{space_choi[sp,] = c(0,0,0,0,0)}
+          break
+        }
+        # if player prefers contract2
+        else if (identical(contract2[1:3], pref_player[[k]][m,])){
+          # rerun contract2's space choice and choose the second best
+          sp = contract1[2]
+          second_contract = space_acum[[sp]][space_acum[[sp]][,4]==1 & space_acum[[sp]][,5]==0,]
+          if (is.null(nrow(second_contract))){
+            space_choi[sp,] = c(0,0,0,0,0)
+          }
+          else if (nrow(second_contract)>1){
+            space_choi[sp,] = c(0,0,0,0,0)
+          }
+          else{space_choi[sp,] = c(0,0,0,0,0)}
+          break
+        }
+        else{next}
+      }
+    }
+  }
+  
+  # unblock the claim contract if resident no longer satisfies the condition
+  for (j in 1:r){
+    if (j %in% space_choi[,1]){
+      if (space_choi[space_choi[,1]==j,2]!=j & space_choi[space_choi[,1]==j,3]==0){
+        next
+      }
+      else{
+        for (k in 1:nrow(space_acum[[j]])){
+          space_acum[[j]][k,5]=0
+        }
+      }
+    }
+    else{
+      for (k in 1:nrow(space_acum[[j]])){
+        space_acum[[j]][k,5]=0
+      }
+    }
+  }
+}
+
+# return the allocation
+colnames(space_choi) = c('player', 'space', 'term', 'status', 'claim')
+print(paste('i =', i))
+print(space_choi)
+
+
+
+
