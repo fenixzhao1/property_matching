@@ -47,6 +47,7 @@ algo_da = function(pref_player, pref_space, n){
   
   # get the initial empty accumulate set for each space
   space_acum = pref_space
+  
   for (i in 1:n){
     # add a 4th column to store whether the contract is in the accumulate set
     space_acum[[i]] = cbind(space_acum[[i]], rep(0, nrow(space_acum[[i]])))
@@ -66,6 +67,8 @@ algo_da = function(pref_player, pref_space, n){
     
     # loop over players to submit their preference
     for (j in reject_player){
+      # skip if the player only has one last invalid contract
+      if (is.null(nrow(pref_player[[j]]))){next}
       # get players' most preferred contract and remove it from the preference
       contract = pref_player[[j]][1,]
       pref_player[[j]] = pref_player[[j]][-1,]
@@ -126,6 +129,7 @@ algo_be = function(pref_player, pref_space, n, r){
   
   # get the initial empty accumulate set for each space
   space_acum = pref_space
+  
   for (i in 1:n){
     # add a 4th column to store whether the contract is in the accumulate set
     space_acum[[i]] = cbind(space_acum[[i]], rep(0, nrow(space_acum[[i]])))
@@ -166,6 +170,8 @@ algo_be = function(pref_player, pref_space, n, r){
     
     # loop over players to submit their preference
     for (j in reject_player){
+      # skip if the player only has one last invalid contract
+      if (is.null(nrow(pref_player[[j]]))){next}
       # get players' most preferred contract and remove it from the preference
       contract = pref_player[[j]][1,]
       pref_player[[j]] = pref_player[[j]][-1,]
@@ -237,7 +243,7 @@ algo_co = function(pref_player, pref_space, n, r){
   space_choi = matrix(0, nrow = n, ncol = 4)
   
   # loop for Benchmark mechanism
-  for (i in 1:10000){
+  for (i in 1:1000){
     
     # collect the players without contract
     reject_player = c()
@@ -247,14 +253,25 @@ algo_co = function(pref_player, pref_space, n, r){
     }
     
     # break out of the loop if there is no rejected player
-    if (length(reject_player)==0){break}
-    
+    if (length(reject_player)==0){
+      break}
     # randomly select a rejected player to propose the choice
-    p = sample(reject_player, 1)
+    else if (length(reject_player)==1){
+      p = reject_player
+    }
+    else{
+      p = sample(reject_player, 1)
+    }
+    
+    # skip if the player only has one last invalid contract
+    if (is.null(nrow(player_acum[[p]]))){next}
     # get that player's most preferred contract and remove it from the preference
     contract = player_acum[[p]][1,]
     player_acum[[p]] = player_acum[[p]][-1,]
+    
     # locate the corresponding space and add the contract to space' accumulate set
+    # =1 means the contract is in the accumulate set
+    # =2 means the contract is blocked by a claim contract
     s = contract[2]
     for (k in 1:nrow(space_acum[[s]])){
       if (identical(contract, space_acum[[s]][k,1:3]) & space_acum[[s]][k,4]!=2){
@@ -263,25 +280,25 @@ algo_co = function(pref_player, pref_space, n, r){
       }
       else{next}
     }
-  
+    
     # for the space selected update the corresponding choice set
     accept_contract = space_acum[[s]][space_acum[[s]][,4]==1,]
     if (is.null(nrow(accept_contract))){
       space_choi[s,] = accept_contract
     }
-    else{
+    else if(nrow(accept_contract)>1){
       accept_contract = accept_contract[1,]
       space_choi[s,] = accept_contract
     }
-      
-    # if the player is resident lock the resident's space
-    if (p<=r & accept_contract[1]==p & accept_contract[2]!=p){
+    else{next}
+    
+    # if the player is resident lock the resident's space with t- contract
+    if (p<=r & accept_contract[1]==p & accept_contract[2]!=p & accept_contract[3]==0){
       # send back a claim contract to block the t+ term of the resident's space
       for (k in 1:nrow(space_acum[[p]])){
-        if (space_acum[[p]][k,1]!=p & space_acum[[p]][k,2]==p & space_acum[[p]][k,3]==1)
+        if (space_acum[[p]][k,1]!=p & space_acum[[p]][k,3]==1)
           # mark the claim contract status = 2
-        {space_acum[[p]][k,4]=2
-        break}
+        {space_acum[[p]][k,4]=2}
         else{next}
       }
       # the resident's space rerun its choice function
@@ -296,56 +313,59 @@ algo_co = function(pref_player, pref_space, n, r){
       else{
         space_choi[p,] = c(0,0,0,0)
       }
-      # anyone who hold two contracts, she keeps the preferred one.
-      # loop over players in space choices to find the player with two choices
-      for (k in 1:n){
-        player_hold = space_choi[space_choi[,1]==k,]
-        nrow = ifelse(is.null(nrow(player_hold)), 1, nrow(player_hold))
-        # if one player has two accepted contracts (at most two)
-        if (nrow==2){
-          # extract the two contracts
-          contract1 = player_hold[1,]
-          contract2 = player_hold[2,]
-          # loop over players preference to compare the two contracts
-          for (m in 1:nrow(pref_player[[k]])){
-            # if player prefers contract1
-            if (identical(contract1[1:3], pref_player[[k]][m,]))
-              # remove contract2 from space choice set
-            {sp = contract2[2]
-              for (l in 1:nrow(space_choi)){
-               if (identical(contract2[1:3], space_choi[l,1:3]))
-               {space_choi[l,1:4]=c(0,0,0,0)
-               break}
-               else{next}
-             }
-              # remove contract2 from space accumulate set
-             for (l in 1:nrow(space_acum[[sp]])){
-               if (identical(contract2[1:3], space_acum[[sp]][l,1:3]))
-               {space_acum[[sp]][l,4]=0
-                break}
-               else{next}
-             }
+    }
+    
+    # anyone who hold two contracts, she keeps the preferred one.
+    # loop over players in space choices to find the player with two choices
+    for (k in 1:n){
+      player_hold = space_choi[space_choi[,1]==k,]
+      nrow = ifelse(is.null(nrow(player_hold)), 1, nrow(player_hold))
+      # if one player has two accepted contracts (at most two)
+      if (nrow>=2){
+        # extract the two contracts
+        contract1 = player_hold[1,]
+        contract2 = player_hold[2,]
+        # loop over players preference to compare the two contracts
+        for (m in 1:nrow(pref_player[[k]])){
+          # if player prefers contract1, remove contract2 from space choice
+          if (identical(contract1[1:3], pref_player[[k]][m,])){
+            sp = contract2[2]
+            for (l in 1:nrow(space_choi)){
+              if (identical(contract2[1:3], space_choi[l,1:3]))
+              {space_choi[l,1:4]=c(0,0,0,0)
+              break}
+              else{next}
             }
-            # if player prefers contract2
-            else if (identical(contract2[1:3], pref_player[[k]][m,]))
-              # remove contract1 from space choice set
-            {sp = contract1[2]
-              for (l in 1:nrow(space_choi)){
+            # remove contract2 from space accumulate set
+            for (l in 1:nrow(space_acum[[sp]])){
+              if (identical(contract2[1:3], space_acum[[sp]][l,1:3]))
+              {space_acum[[sp]][l,4]=0
+              break}
+              else{next}
+            }
+            # break out of the loop
+            break
+          }
+          # if player prefers contract2, remove contract1 from space choice
+          else if (identical(contract2[1:3], pref_player[[k]][m,])){
+            sp = contract1[2]
+            for (l in 1:nrow(space_choi)){
               if (identical(contract1[1:3], space_choi[l,1:3]))
               {space_choi[l,1:4]=c(0,0,0,0)
               break}
               else{next}
             }
-              # remove contract1 from space accumulate set
-              for (l in 1:nrow(space_acum[[sp]])){
-                if (identical(contract1[1:3], space_acum[[sp]][l,1:3]))
-                {space_acum[[sp]][l,4]=0
-                break}
-                else{next}
-              }
+            # remove contract1 from space accumulate set
+            for (l in 1:nrow(space_acum[[sp]])){
+              if (identical(contract1[1:3], space_acum[[sp]][l,1:3]))
+              {space_acum[[sp]][l,4]=0
+              break}
+              else{next}
             }
-            else{next}
+            # break out of the loop
+            break
           }
+          else{next}
         }
       }
     }
