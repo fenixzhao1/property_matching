@@ -14,7 +14,7 @@ n = 5 # number of players and total spaces
 r = 2 # number of residents and their spaces
 v = n-r # number of visitors and their spaces
 t = c(0,1) # 0 is t- contract and 1 is t+ contract
-sim = 1000
+sim = 10000
 
 # contract list
 contract = c() # three columns: player id, space id, term
@@ -28,44 +28,10 @@ for (i in 1:n){
     }
   }
 }
+num_contract = nrow(contract)
 
 
-##### Compare Among Mechanisms #####
-# players' preference lists
-pref_player = create_player_pref(n, contract)
-
-# space's priority lists
-pref_space = create_space_pref(r, n, contract)
-
-# get simulation result
-#allocation = algo_da(pref_player, pref_space, n)
-#allocation = algo_be(pref_player, pref_space, n, r)
-allocation = algo_co(pref_player, pref_space, n, r)
-print(allocation)
-
-# calculate the efficiency of the current simulation
-# get the ranking for each position
-allo = unname(cbind(allocation, rep(0,n)))
-# loop over players
-for (i in 1:n){
-  accept_cont = allo[i,1:3]
-  player_id = allo[i,1]
-  # loop over spaces
-  for (k in 1:nrow(pref_player[[player_id]])){
-    # locate the player preference for the allocated space
-    if (identical(accept_cont, pref_player[[player_id]][k,])){
-      allo[i,5] = k
-    }
-    else{next}
-  }
-}
-colnames(allo) = c('player', 'space', 'term', 'status', 'ranking')
-print(allo)
-print(paste('efficiency =', mean(allo[,5])))
-rm(allo, allocation, accept_cont, player_id)
-
-
-##### Testing Cumulative Offer #####
+##### Testing Algorithms #####
 # contract list
 contract = c() # three columns: player id, space id, term
 # loop over players
@@ -248,5 +214,189 @@ print(paste('i =', i))
 print(space_choi)
 
 
+##### Compare Among Mechanisms #####
+# create data container
+table = matrix(0, nrow = 3, ncol = 4)
+rownames(table) = c('#steps', 'Efficiency', 'Property Right Violation')
+colnames(table) = c('Deferred Acceptance', 'Benchmark',
+                    'Cumulative Offer', 'Separate Matching')
 
+# Run simulations
+for (i in 1:sim){
+  
+  # players' preference lists
+  pref_player = create_player_pref(n, contract)
+  
+  # space's priority lists
+  pref_space = create_space_pref(r, n, contract)
+  
+  # get simulation result
+  allo_da = algo_da(pref_player, pref_space, n)
+  allo_be = algo_be(pref_player, pref_space, n, r)
+  allo_co = algo_co(pref_player, pref_space, n, r)
+  allo_sm = algo_sm(pref_player, pref_space, n, r)
+  
+  # update the number of steps
+  table[1,1] = table[1,1] + allo_da[[1]]
+  table[1,2] = table[1,2] + allo_be[[1]]
+  table[1,3] = table[1,3] + allo_co[[1]]
+  table[1,4] = table[1,4] + allo_sm[[1]]
+  
+  # efficiency is the sum of the rankings of all the players
+  # DA efficiency
+  effi_da = 0
+  allo = unname(allo_da[[2]])
+  for (i in 1:n){
+    accept_cont = allo[i,1:3]
+    player_id = allo[i,1]
+    if (player_id == 0){
+      effi_da = effi_da + nrow(pref_player[[1]])
+      break
+    }
+    for (k in 1:nrow(pref_player[[player_id]])){
+      if (identical(accept_cont, pref_player[[player_id]][k,])){
+        effi_da = effi_da + k
+        break
+      }
+      else{next}
+    }
+  }
+  
+  # BE efficiency
+  effi_be = 0
+  allo = unname(allo_be[[2]])
+  for (i in 1:n){
+    accept_cont = allo[i,1:3]
+    player_id = allo[i,1]
+    if (player_id == 0){
+      effi_be = effi_be + nrow(pref_player[[1]])
+      break
+    }
+    for (k in 1:nrow(pref_player[[player_id]])){
+      if (identical(accept_cont, pref_player[[player_id]][k,])){
+        effi_be = effi_be + k
+        break
+      }
+      else{next}
+    }
+  }
+  
+  # CO efficiency
+  effi_co = 0
+  allo = unname(allo_co[[2]])
+  for (i in 1:n){
+    accept_cont = allo[i,1:3]
+    player_id = allo[i,1]
+    if (player_id == 0){
+      effi_co = effi_co + nrow(pref_player[[1]])
+      break
+    }
+    for (k in 1:nrow(pref_player[[player_id]])){
+      if (identical(accept_cont, pref_player[[player_id]][k,])){
+        effi_co = effi_co + k
+        break
+      }
+      else{next}
+    }
+  }
+  
+  # SM efficiency
+  effi_sm = 0
+  allo = unname(allo_sm[[2]])
+  for (i in 1:n){
+    accept_cont = allo[i,1:3]
+    player_id = allo[i,1]
+    if (player_id == 0){
+      effi_sm = effi_sm + nrow(pref_player[[1]])
+      break
+    }
+    for (k in 1:nrow(pref_player[[player_id]])){
+      if (identical(accept_cont, pref_player[[player_id]][k,])){
+        effi_sm = effi_sm + k
+        break
+      }
+      else{next}
+    }
+  }
+  
+  # update the efficiency in the table
+  table[2,1] = table[2,1] + effi_da/effi_da
+  table[2,2] = table[2,2] + effi_da/effi_be
+  table[2,3] = table[2,3] + effi_da/effi_co
+  table[2,4] = table[2,4] + effi_da/effi_sm
+  
+  # update property right violation rate
+  # DA violation
+  violation = rep(0, r)
+  allo = unname(allo_da[[2]])
+  for (i in 1:r){
+    resi_contract = allo[allo[,1]==i]
+    if (length(resi_contract)==0){
+      violation[i] = 1
+    }
+    else{
+      if (resi_contract[2]!=i & resi_contract[3]==0 & allo[i,3]==1){
+        violation[i] = 1
+      }
+    }
+  }
+  vio_da = prod(violation)
+  
+  # BE violation
+  violation = rep(0, r)
+  allo = unname(allo_be[[2]])
+  for (i in 1:r){
+    resi_contract = allo[allo[,1]==i]
+    if (length(resi_contract)==0){
+      violation[i] = 1
+    }
+    else{
+      if (resi_contract[2]!=i & resi_contract[3]==0 & allo[i,3]==1){
+        violation[i] = 1
+      }
+    }
+  }
+  vio_be = prod(violation)
+  
+  # CO violation
+  violation = rep(0, r)
+  allo = unname(allo_co[[2]])
+  for (i in 1:r){
+    resi_contract = allo[allo[,1]==i]
+    if (length(resi_contract)==0){
+      violation[i] = 1
+    }
+    else{
+      if (resi_contract[2]!=i & resi_contract[3]==0 & allo[i,3]==1){
+        violation[i] = 1
+      }
+    }
+  }
+  vio_co = prod(violation)
+  
+  # SM violation
+  violation = rep(0, r)
+  allo = unname(allo_sm[[2]])
+  for (i in 1:r){
+    resi_contract = allo[allo[,1]==i]
+    if (length(resi_contract)==0){
+      violation[i] = 1
+    }
+    else{
+      if (resi_contract[2]!=i & resi_contract[3]==0 & allo[i,3]==1){
+        violation[i] = 1
+      }
+    }
+  }
+  vio_sm = prod(violation)
+  
+  # update the violation rate in the table
+  table[3,1] = table[3,1] + vio_da
+  table[3,2] = table[3,2] + vio_be
+  table[3,3] = table[3,3] + vio_co
+  table[3,4] = table[3,4] + vio_sm
+}
 
+# calculate the average
+table = round(table/sim, digits = 3)
+print(table)
