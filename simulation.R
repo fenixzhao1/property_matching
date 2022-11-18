@@ -400,3 +400,22 @@ for (i in 1:sim){
 # calculate the average
 table = round(table/sim, digits = 3)
 print(table)
+
+
+##### Results for One Single Trail #####
+# players' preference lists
+pref_player = create_player_pref(n, contract)
+
+# space's priority lists
+pref_space = create_space_pref(r, n, contract)
+
+# get simulation result
+allo_da = algo_da(pref_player, pref_space, n)
+allo_be = algo_be(pref_player, pref_space, n, r)
+allo_co = algo_co(pref_player, pref_space, n, r)
+allo_sm = algo_sm(pref_player, pref_space, n, r)
+
+# print the result
+print(pref_player)
+print(pref_space)
+print(allo_da[[2]])
