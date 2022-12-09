@@ -14,7 +14,7 @@ n = 5 # number of players and total spaces
 r = 2 # number of residents and their spaces
 v = n-r # number of visitors and their spaces
 t = c(0,1) # 0 is t- contract and 1 is t+ contract
-sim = 10000
+sim = 1000
 
 # contract list
 contract = c() # three columns: player id, space id, term
@@ -216,10 +216,11 @@ print(space_choi)
 
 ##### Compare Among Mechanisms #####
 # create data container
-table = matrix(0, nrow = 3, ncol = 4)
+table = matrix(0, nrow = 3, ncol = 5)
 rownames(table) = c('#steps', 'Efficiency', 'Property Right Violation')
 colnames(table) = c('Deferred Acceptance', 'Benchmark',
-                    'Cumulative Offer', 'Separate Matching')
+                    'Cumulative Offer', 'Separate Matching',
+                    'DA with protection')
 
 # Run simulations
 for (i in 1:sim){
@@ -235,12 +236,14 @@ for (i in 1:sim){
   allo_be = algo_be(pref_player, pref_space, n, r)
   allo_co = algo_co(pref_player, pref_space, n, r)
   allo_sm = algo_sm(pref_player, pref_space, n, r)
+  allo_dapro = algo_da_pro(pref_player, pref_space, n, r)
   
   # update the number of steps
   table[1,1] = table[1,1] + allo_da[[1]]
   table[1,2] = table[1,2] + allo_be[[1]]
   table[1,3] = table[1,3] + allo_co[[1]]
   table[1,4] = table[1,4] + allo_sm[[1]]
+  table[1,5] = table[1,5] + allo_dapro[[1]]
   
   # efficiency is the sum of the rankings of all the players
   # DA efficiency
@@ -319,11 +322,31 @@ for (i in 1:sim){
     }
   }
   
+  # DA pro efficiency
+  effi_dapro = 0
+  allo = unname(allo_dapro[[2]])
+  for (i in 1:n){
+    accept_cont = allo[i,1:3]
+    player_id = allo[i,1]
+    if (player_id == 0){
+      effi_dapro = effi_dapro + nrow(pref_player[[1]])
+      break
+    }
+    for (k in 1:nrow(pref_player[[player_id]])){
+      if (identical(accept_cont, pref_player[[player_id]][k,])){
+        effi_dapro = effi_dapro + k
+        break
+      }
+      else{next}
+    }
+  }
+  
   # update the efficiency in the table
   table[2,1] = table[2,1] + effi_da/effi_da
   table[2,2] = table[2,2] + effi_da/effi_be
   table[2,3] = table[2,3] + effi_da/effi_co
   table[2,4] = table[2,4] + effi_da/effi_sm
+  table[2,5] = table[2,5] + effi_da/effi_dapro
   
   # update property right violation rate
   # DA violation
@@ -340,7 +363,7 @@ for (i in 1:sim){
       }
     }
   }
-  vio_da = prod(violation)
+  vio_da = ifelse(sum(violation)>0, 1, 0)
   
   # BE violation
   violation = rep(0, r)
@@ -356,7 +379,7 @@ for (i in 1:sim){
       }
     }
   }
-  vio_be = prod(violation)
+  vio_be = ifelse(sum(violation)>0, 1, 0)
   
   # CO violation
   violation = rep(0, r)
@@ -372,7 +395,7 @@ for (i in 1:sim){
       }
     }
   }
-  vio_co = prod(violation)
+  vio_co = ifelse(sum(violation)>0, 1, 0)
   
   # SM violation
   violation = rep(0, r)
@@ -388,13 +411,30 @@ for (i in 1:sim){
       }
     }
   }
-  vio_sm = prod(violation)
+  vio_sm = ifelse(sum(violation)>0, 1, 0)
+  
+  # DA pro violation
+  violation = rep(0, r)
+  allo = unname(allo_dapro[[2]])
+  for (i in 1:r){
+    resi_contract = allo[allo[,1]==i]
+    if (length(resi_contract)==0){
+      violation[i] = 1
+    }
+    else{
+      if (resi_contract[2]!=i & resi_contract[3]==0 & allo[i,3]==1){
+        violation[i] = 1
+      }
+    }
+  }
+  vio_dapro = ifelse(sum(violation)>0, 1, 0)
   
   # update the violation rate in the table
   table[3,1] = table[3,1] + vio_da
   table[3,2] = table[3,2] + vio_be
   table[3,3] = table[3,3] + vio_co
   table[3,4] = table[3,4] + vio_sm
+  table[3,5] = table[3,5] + vio_dapro
 }
 
 # calculate the average

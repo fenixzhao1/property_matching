@@ -130,6 +130,102 @@ algo_da = function(pref_player, pref_space, n){
 }
 
 
+# Deferred Acceptance but residents protect their own space
+algo_da_pro = function(pref_player, pref_space, n, r){
+  
+  # get the initial empty accumulate set for each space
+  space_acum = pref_space
+  player_acum = pref_player
+  
+  # adjust resident's preference so their prioritize their own space
+  for (i in 1:r){
+    pref_res = player_acum[[i]][player_acum[[i]][,2]==i,]
+    pref_pub = player_acum[[i]][player_acum[[i]][,2]!=i,]
+    player_acum[[i]] = rbind(pref_res, pref_pub)
+  }
+  
+  for (i in 1:n){
+    # add a 4th column to store whether the contract is in the accumulate set
+    space_acum[[i]] = cbind(space_acum[[i]], rep(0, nrow(space_acum[[i]])))
+  }
+  
+  # get the initial empty choice set for each space
+  space_choi = matrix(0, nrow = n, ncol = 4)
+  colnames(space_choi) = c('player', 'space', 'term', 'status')
+  
+  # loop for GS mechanism
+  for (i in 1:10000){
+    
+    # set up the reject player list for all players in the first round
+    if (i==1){
+      reject_player = 1:n
+    }
+    
+    # loop over players to submit their preference
+    for (j in reject_player){
+      # skip if the player only has one last invalid contract
+      if (is.null(nrow(player_acum[[j]]))){next}
+      # get players' most preferred contract and remove it from the preference
+      contract = player_acum[[j]][1,]
+      player_acum[[j]] = player_acum[[j]][-1,]
+      # locate the corresponding space and add the contract to space' accumulate set
+      s = contract[2]
+      for (k in 1:nrow(space_acum[[s]])){
+        if (identical(contract, space_acum[[s]][k,1:3])){
+          space_acum[[s]][k,4] = 1
+          break
+        }
+        else{next}
+      }
+    }
+    
+    # initialize reject player for the next round
+    reject_player = c()
+    
+    # loop over spaces to reject the lowest player
+    for (j in 1:n){
+      # filter the accumulate set
+      temp_acum = space_acum[[j]][space_acum[[j]][,4]==1,]
+      row = nrow(temp_acum)
+      # when row=1, the matrix will be transferred to a vector and nrow() trigger error
+      if (is.null(row)){row = 1}
+      if (row > 1){
+        # find the rejected contract
+        reject_contract = temp_acum[row,]
+        # add the reject player to the overall reject players set
+        reject_player = c(reject_player, temp_acum[row,1])
+        # remove the contract from the accumulate set
+        for (k in 1:nrow(space_acum[[j]])){
+          if (identical(reject_contract, space_acum[[j]][k,])){
+            space_acum[[j]][k,4] = 0
+            break
+          }
+          else{next}
+        }
+      }
+      else{next}
+    }
+    
+    # break out of the loop if there is no rejected player
+    if (length(reject_player) == 0){break}
+    else{next}
+  }
+  
+  # return the allocation
+  steps = i
+  
+  for (i in 1:n){
+    accept_contract = space_acum[[i]][space_acum[[i]][,4]==1,]
+    space_choi[i,] = accept_contract
+  }
+  
+  my_list = list()
+  my_list[[1]] = steps
+  my_list[[2]] = space_choi
+  return(my_list)
+}
+
+
 # Benchmark
 # similar to DA but the visitors cannot apply t+ contract to residents' space
 algo_be = function(pref_player, pref_space, n, r){
